@@ -1,6 +1,8 @@
 <resources>
     <string name="app_name">Inicio TV</string>
     <string name="empty_apps">No se encontraron aplicaciones para mostrar.</string>
+    <string name="empty_favorites">Mantén pulsado OK sobre una app y elige «Añadir a favoritos».</string>
+    <string name="no_other_apps">No hay otras aplicaciones para mostrar.</string>
     <string name="launch_error">No se pudo abrir esta aplicación.</string>
     <string name="brand_tagline">TU CENTRO DE ENTRETENIMIENTO</string>
     <string name="settings">Ajustes</string>
@@ -10,7 +12,17 @@
     <string name="hero_empty_action">EXPLORA TUS APLICACIONES</string>
     <string name="featured_label">ACCESO RÁPIDO</string>
     <string name="open_app">ABRIR %1$s</string>
-    <string name="apps_title">Tus aplicaciones</string>
+    <string name="system_resources">CONEXIÓN Y RECURSOS</string>
+    <string name="wifi_status_connected">Wi‑Fi conectado</string>
+    <string name="wifi_status_disconnected">Wi‑Fi desconectado</string>
+    <string name="storage_status">Libre %1$s</string>
+    <string name="ram_status">RAM libre %1$s</string>
+    <string name="primary_app_title">Acceso principal</string>
+    <string name="choose_primary_app">Elegir app</string>
+    <string name="automatic_primary_app">Automático</string>
+    <string name="favorites_title">Tus favoritas</string>
+    <string name="other_apps_title">Más aplicaciones</string>
+    <string name="app_ready">%1$d aplicación lista</string>
     <string name="apps_ready">%1$d aplicaciones listas</string>
     <string name="apps_hint">◀ ▶ explorar · OK abrir · Mantén OK para opciones</string>
     <string name="remote_hint">MANTÉN OK SOBRE UNA APP PARA FAVORITOS Y MÁS OPCIONES</string>

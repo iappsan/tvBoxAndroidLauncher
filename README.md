@@ -1,6 +1,6 @@
 # Inicio TV
 
-Launcher Android ligero para TV Box con una pantalla de inicio panorámica, acceso destacado, carrusel de aplicaciones, hora y accesos a ajustes. Mantén pulsado **OK** sobre una app para agregarla a favoritos, ocultarla o iniciar su desinstalación. Los favoritos aparecen primero y la configuración incluye aplicaciones ocultas, información del dispositivo y temas de color. Android siempre muestra su propia confirmación al desinstalar.
+Launcher Android ligero para TV Box con una pantalla de inicio panorámica, un acceso principal configurable y cuadrículas verticales para las apps favoritas y más aplicaciones. Usa **Elegir app** para seleccionar cuál aparece como acceso principal o volver a la selección automática. La cabecera reúne la marca, el Wi‑Fi, el almacenamiento disponible, la RAM libre, la hora y los ajustes. Mantén pulsado **OK** sobre una app para agregarla a favoritos, ocultarla o iniciar su desinstalación. La configuración incluye aplicaciones ocultas, información del dispositivo y temas de color. Android siempre muestra su propia confirmación al desinstalar.
 
 El launcher no desactiva procesos ni modifica automáticamente los ajustes de rendimiento del sistema.
 
@@ -19,6 +19,16 @@ Se requiere Java compatible con Gradle 9.6 y Android SDK Platform 37. En Windows
 ```
 
 El APK de prueba queda en `app\build\outputs\apk\debug\app-debug.apk`.
+
+## Generar el release 1.0.0
+
+```powershell
+.\gradlew.bat assembleRelease
+```
+
+El APK Release sin firmar queda en `app\build\outputs\apk\release\app-release-unsigned.apk`. Antes de instalarlo o distribuirlo, hay que firmarlo con una keystore de release; conserva esa clave para poder publicar futuras actualizaciones.
+
+El APK firmado queda en `app\build\outputs\apk\release\app-release.apk`. La keystore y los archivos locales de contraseña se guardan fuera del proyecto, en `%LOCALAPPDATA%\InicioTVSigning`; haz una copia segura de esos archivos y no los compartas ni los incluyas en el código fuente.
 
 
 ## Probar en el emulador

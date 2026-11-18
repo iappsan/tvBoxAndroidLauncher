@@ -11,6 +11,9 @@ import android.content.pm.ResolveInfo;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -25,9 +28,10 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
-import android.widget.HorizontalScrollView;
+import android.widget.GridLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -46,6 +50,7 @@ public class MainActivity extends Activity {
     private static final String PREFERENCES = "launcher_preferences";
     private static final String FAVORITES_KEY = "favorites";
     private static final String HIDDEN_APPS_KEY = "hidden_apps";
+    private static final String PRIMARY_APP_KEY = "primary_app";
     private static final String THEME_KEY = "theme";
     private static final String[] FEATURED_APP_NAMES = {
             "youtube", "netflix", "prime video", "disney", "max", "plex", "kodi", "spotify"
@@ -74,12 +79,17 @@ public class MainActivity extends Activity {
         @Override
         public void run() {
             updateClock();
+            updateSystemStatus();
             clockHandler.postDelayed(this, 60_000);
         }
     };
 
     private TextView clockText;
     private TextView dateText;
+    private ImageView wifiIcon;
+    private TextView wifiText;
+    private TextView storageText;
+    private TextView ramText;
     private ThemePalette currentTheme;
 
     @Override
@@ -112,63 +122,124 @@ public class MainActivity extends Activity {
 
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
-        page.setGravity(Gravity.CENTER_VERTICAL);
-        page.setClipChildren(false);
-        page.setClipToPadding(false);
-        page.setPadding(dp(48), dp(24), dp(48), dp(24));
+        page.setPadding(dp(48), dp(16), dp(48), dp(16));
         page.setBackground(createBackdrop());
 
         LinearLayout header = createHeader();
+        header.setBackgroundColor(currentTheme.backgroundTop);
+        header.setElevation(dp(16));
         page.addView(header, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(56)));
-        addSpace(page, 22);
+        addSpace(page, 12);
+
+        ScrollView contentScroll = new ScrollView(this);
+        contentScroll.setFillViewport(true);
+        contentScroll.setVerticalScrollBarEnabled(false);
+        contentScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        contentScroll.setClipChildren(true);
+        contentScroll.setClipToPadding(true);
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(0, dp(4), 0, dp(24));
+
+        LinearLayout mainSection = new LinearLayout(this);
+        mainSection.setOrientation(LinearLayout.HORIZONTAL);
+        mainSection.setGravity(Gravity.CENTER_VERTICAL);
+        TextView mainTitle = createText(getString(R.string.primary_app_title),
+                21, Color.WHITE, true);
+        mainSection.addView(mainTitle);
+        View mainSectionSpacer = new View(this);
+        mainSection.addView(mainSectionSpacer, new LinearLayout.LayoutParams(0, 1, 1));
+        TextView choosePrimaryApp = createText(getString(R.string.choose_primary_app),
+                13, Color.WHITE, true);
+        choosePrimaryApp.setId(View.generateViewId());
+        choosePrimaryApp.setGravity(Gravity.CENTER);
+        choosePrimaryApp.setPadding(dp(16), dp(8), dp(16), dp(8));
+        choosePrimaryApp.setBackground(createSettingsBackground(false));
+        choosePrimaryApp.setFocusable(true);
+        choosePrimaryApp.setFocusableInTouchMode(true);
+        choosePrimaryApp.setClickable(true);
+        choosePrimaryApp.setContentDescription(getString(R.string.choose_primary_app));
+        choosePrimaryApp.setOnFocusChangeListener((view, focused) ->
+                view.setBackground(createSettingsBackground(focused)));
+        choosePrimaryApp.setOnClickListener(view -> showPrimaryAppPicker(apps));
+        mainSection.addView(choosePrimaryApp);
+        content.addView(mainSection, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
+        addSectionDivider(content);
 
         View hero = createHeroCard(featuredApp);
-        page.addView(hero, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(226)));
-        addSpace(page, 26);
+        content.addView(hero, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(220)));
 
-        LinearLayout sectionHeader = createAppsSectionHeader(apps.size());
-        page.addView(sectionHeader, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
-        addSpace(page, 10);
-
-        View firstAppCard = null;
-        if (apps.isEmpty()) {
-            TextView empty = createText(getString(R.string.empty_apps), 18, Color.WHITE, false);
-            page.addView(empty, new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, dp(150)));
-        } else {
-            HorizontalScrollView appScroll = new HorizontalScrollView(this);
-            appScroll.setHorizontalScrollBarEnabled(false);
-            appScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
-            appScroll.setClipChildren(false);
-            appScroll.setClipToPadding(false);
-
-            LinearLayout appRow = new LinearLayout(this);
-            appRow.setOrientation(LinearLayout.HORIZONTAL);
-            appRow.setClipChildren(false);
-            appRow.setClipToPadding(false);
-            for (ResolveInfo app : apps) {
-                View card = createAppCard(app);
-                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(184), dp(148));
-                params.rightMargin = dp(14);
-                appRow.addView(card, params);
-                if (firstAppCard == null) {
-                    firstAppCard = card;
-                }
+        Set<String> favoritePackages = getPreferences().getStringSet(
+                FAVORITES_KEY, Collections.emptySet());
+        List<ResolveInfo> favoriteApps = new ArrayList<>();
+        List<ResolveInfo> otherApps = new ArrayList<>();
+        String featuredPackage = featuredApp == null ? null : featuredApp.activityInfo.packageName;
+        for (ResolveInfo app : apps) {
+            String packageName = app.activityInfo.packageName;
+            boolean isFeatured = packageName.equals(featuredPackage);
+            if (isFeatured) {
+                continue;
             }
-            appScroll.addView(appRow);
-            page.addView(appScroll, new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, dp(158)));
+            if (favoritePackages.contains(packageName)) {
+                favoriteApps.add(app);
+            } else {
+                otherApps.add(app);
+            }
         }
 
-        TextView         footer = createText(getString(R.string.remote_hint), 13,
+        addSpace(content, 16);
+        content.addView(createAppsSectionHeader(
+                        R.string.favorites_title, favoriteApps.size(), true),
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
+        addSectionDivider(content);
+
+        View firstAppCard = null;
+        if (favoriteApps.isEmpty()) {
+            content.addView(createSectionMessage(R.string.empty_favorites));
+        } else {
+            GridLayout favoritesGrid = createAppsGrid(favoriteApps);
+            content.addView(favoritesGrid);
+            firstAppCard = favoritesGrid.getChildAt(0);
+        }
+
+        addSpace(content, 16);
+        content.addView(createAppsSectionHeader(
+                        R.string.other_apps_title, otherApps.size(), true),
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
+        addSectionDivider(content);
+
+        if (otherApps.isEmpty()) {
+            content.addView(createSectionMessage(
+                    apps.isEmpty() ? R.string.empty_apps : R.string.no_other_apps));
+        } else {
+            GridLayout otherGrid = createAppsGrid(otherApps);
+            content.addView(otherGrid);
+            if (firstAppCard == null) {
+                firstAppCard = otherGrid.getChildAt(0);
+            }
+        }
+
+        TextView footer = createText(getString(R.string.remote_hint), 13,
                 Color.rgb(143, 160, 174), false);
         LinearLayout.LayoutParams footerParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(20));
-        footerParams.topMargin = dp(18);
-        page.addView(footer, footerParams);
+        footerParams.topMargin = dp(20);
+        content.addView(footer, footerParams);
+
+        contentScroll.addView(content);
+        FrameLayout contentViewport = new FrameLayout(this);
+        contentViewport.setClipChildren(true);
+        contentViewport.setClipToPadding(true);
+        contentViewport.addView(contentScroll, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        page.addView(contentViewport, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
         setContentView(page);
         View initialFocus = featuredApp != null ? hero : firstAppCard;
@@ -176,10 +247,101 @@ public class MainActivity extends Activity {
             hero.setNextFocusDownId(firstAppCard.getId());
             firstAppCard.setNextFocusUpId(hero.getId());
         }
+        if (featuredApp != null) {
+            hero.setNextFocusUpId(choosePrimaryApp.getId());
+            choosePrimaryApp.setNextFocusDownId(hero.getId());
+        } else if (initialFocus == null) {
+            initialFocus = choosePrimaryApp;
+        }
         if (initialFocus != null) {
             page.post(initialFocus::requestFocus);
         }
         updateClock();
+        updateSystemStatus();
+    }
+
+    private LinearLayout createSystemStatusBar() {
+        LinearLayout statusBar = new LinearLayout(this);
+        statusBar.setOrientation(LinearLayout.HORIZONTAL);
+        statusBar.setGravity(Gravity.CENTER_VERTICAL);
+        statusBar.setClipChildren(false);
+
+        TextView label = createText(getString(R.string.system_resources), 11,
+                Color.rgb(143, 160, 174), true);
+        statusBar.addView(label);
+
+        LinearLayout wifi = createStatusChip(R.drawable.ic_wifi);
+        wifiIcon = (ImageView) wifi.getChildAt(0);
+        wifiText = (TextView) wifi.getChildAt(1);
+        LinearLayout.LayoutParams wifiParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(32));
+        wifiParams.leftMargin = dp(12);
+        statusBar.addView(wifi, wifiParams);
+
+        LinearLayout storage = createStatusChip(R.drawable.ic_storage);
+        storageText = (TextView) storage.getChildAt(1);
+        LinearLayout.LayoutParams storageParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(32));
+        storageParams.leftMargin = dp(18);
+        statusBar.addView(storage, storageParams);
+
+        LinearLayout memory = createStatusChip(R.drawable.ic_memory);
+        ramText = (TextView) memory.getChildAt(1);
+        LinearLayout.LayoutParams memoryParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(32));
+        memoryParams.leftMargin = dp(18);
+        statusBar.addView(memory, memoryParams);
+        return statusBar;
+    }
+
+    private LinearLayout createStatusChip(int iconResource) {
+        LinearLayout chip = new LinearLayout(this);
+        chip.setOrientation(LinearLayout.HORIZONTAL);
+        chip.setGravity(Gravity.CENTER_VERTICAL);
+
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(iconResource);
+        icon.setColorFilter(currentTheme.accent);
+        chip.addView(icon, new LinearLayout.LayoutParams(dp(18), dp(18)));
+
+        TextView text = createText("", 12, Color.rgb(211, 224, 231), false);
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        textParams.leftMargin = dp(6);
+        chip.addView(text, textParams);
+        return chip;
+    }
+
+    private void updateSystemStatus() {
+        if (wifiText == null || storageText == null || ramText == null || wifiIcon == null) {
+            return;
+        }
+
+        ConnectivityManager connectivityManager =
+                (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        boolean wifiConnected = false;
+        for (Network network : connectivityManager.getAllNetworks()) {
+            NetworkCapabilities capabilities = connectivityManager.getNetworkCapabilities(network);
+            if (capabilities != null
+                    && capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                wifiConnected = true;
+                break;
+            }
+        }
+        wifiText.setText(wifiConnected
+                ? R.string.wifi_status_connected : R.string.wifi_status_disconnected);
+        wifiIcon.setColorFilter(wifiConnected
+                ? currentTheme.accent : Color.rgb(143, 160, 174));
+
+        StatFs storage = new StatFs(Environment.getDataDirectory().getPath());
+        storageText.setText(getString(R.string.storage_status,
+                Formatter.formatFileSize(this, storage.getAvailableBytes())));
+
+        ActivityManager.MemoryInfo memoryInfo = new ActivityManager.MemoryInfo();
+        ActivityManager activityManager = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+        activityManager.getMemoryInfo(memoryInfo);
+        ramText.setText(getString(R.string.ram_status,
+                Formatter.formatFileSize(this, memoryInfo.availMem)));
     }
 
     private LinearLayout createHeader() {
@@ -208,6 +370,12 @@ public class MainActivity extends Activity {
         View spacer = new View(this);
         header.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1));
 
+        LinearLayout systemStatus = createSystemStatusBar();
+        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(36));
+        statusParams.leftMargin = dp(20);
+        header.addView(systemStatus, statusParams);
+
         LinearLayout time = new LinearLayout(this);
         time.setOrientation(LinearLayout.VERTICAL);
         time.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
@@ -215,7 +383,10 @@ public class MainActivity extends Activity {
         dateText = createText("", 12, Color.rgb(166, 181, 193), false);
         time.addView(clockText);
         time.addView(dateText);
-        header.addView(time);
+        LinearLayout.LayoutParams timeParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.MATCH_PARENT);
+        timeParams.leftMargin = dp(28);
+        header.addView(time, timeParams);
 
         LinearLayout settings = new LinearLayout(this);
         settings.setOrientation(LinearLayout.HORIZONTAL);
@@ -310,6 +481,10 @@ public class MainActivity extends Activity {
                         .scaleY(focused ? 1.015f : 1f).setDuration(140).start();
             });
             hero.setOnClickListener(view -> launchApp(app));
+            hero.setOnLongClickListener(view -> {
+                showAppOptions(app);
+                return true;
+            });
         }
         return hero;
     }
@@ -365,27 +540,67 @@ public class MainActivity extends Activity {
         return badge;
     }
 
-    private LinearLayout createAppsSectionHeader(int appCount) {
+    private LinearLayout createAppsSectionHeader(
+            int titleResource, int appCount, boolean showCount) {
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView title = createText(getString(R.string.apps_title), 21, Color.WHITE, true);
+        TextView title = createText(getString(titleResource), 21, Color.WHITE, true);
         header.addView(title);
 
-        TextView count = createText(getString(R.string.apps_ready, appCount), 13,
-                Color.rgb(143, 160, 174), false);
-        LinearLayout.LayoutParams countParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        countParams.leftMargin = dp(14);
-        header.addView(count, countParams);
-
-        View spacer = new View(this);
-        header.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1));
-        TextView hint = createText(getString(R.string.apps_hint), 13,
-                Color.rgb(143, 160, 174), false);
-        header.addView(hint);
+        if (showCount) {
+            int countResource = appCount == 1
+                    ? R.string.app_ready : R.string.apps_ready;
+            TextView count = createText(getString(countResource, appCount), 13,
+                    Color.rgb(143, 160, 174), false);
+            LinearLayout.LayoutParams countParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            countParams.leftMargin = dp(14);
+            header.addView(count, countParams);
+        }
         return header;
+    }
+
+    private void addSectionDivider(LinearLayout parent) {
+        View divider = new View(this);
+        divider.setBackgroundColor(currentTheme.border);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(1));
+        params.topMargin = dp(2);
+        params.bottomMargin = dp(12);
+        parent.addView(divider, params);
+    }
+
+    private TextView createSectionMessage(int messageResource) {
+        TextView message = createText(getString(messageResource), 15,
+                Color.rgb(166, 181, 193), false);
+        message.setPadding(dp(8), dp(12), dp(8), dp(12));
+        return message;
+    }
+
+    private GridLayout createAppsGrid(List<ResolveInfo> apps) {
+        GridLayout grid = new GridLayout(this);
+        int availableWidthDp = Math.round(
+                getResources().getDisplayMetrics().widthPixels
+                        / getResources().getDisplayMetrics().density) - 2 * 48;
+        int columnCount = Math.max(3, Math.min(6, availableWidthDp / 270));
+        grid.setColumnCount(columnCount);
+        grid.setAlignmentMode(GridLayout.ALIGN_BOUNDS);
+        grid.setUseDefaultMargins(false);
+        grid.setClipChildren(false);
+        grid.setClipToPadding(false);
+
+        for (ResolveInfo app : apps) {
+            View card = createAppCard(app);
+            GridLayout.LayoutParams params = new GridLayout.LayoutParams();
+            params.width = 0;
+            params.height = dp(142);
+            params.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
+            params.setMargins(dp(6), dp(6), dp(6), dp(6));
+            grid.addView(card, params);
+        }
+        return grid;
     }
 
     private View createAppCard(ResolveInfo app) {
@@ -482,21 +697,63 @@ public class MainActivity extends Activity {
 
     private ResolveInfo getFeaturedApp(List<ResolveInfo> apps) {
         PackageManager packageManager = getPackageManager();
-        Set<String> favorites = getPreferences().getStringSet(FAVORITES_KEY, Collections.emptySet());
-        for (ResolveInfo app : apps) {
-            if (favorites.contains(app.activityInfo.packageName)) {
-                return app;
-            }
-        }
-        for (String preferredName : FEATURED_APP_NAMES) {
+        String selectedPackage = getPreferences().getString(PRIMARY_APP_KEY, null);
+        if (selectedPackage != null) {
             for (ResolveInfo app : apps) {
-                String label = app.loadLabel(packageManager).toString().toLowerCase(Locale.ROOT);
-                if (label.contains(preferredName)) {
+                if (selectedPackage.equals(app.activityInfo.packageName)) {
                     return app;
                 }
             }
         }
+
+        Set<String> favorites = getPreferences().getStringSet(FAVORITES_KEY, Collections.emptySet());
+        for (String preferredName : FEATURED_APP_NAMES) {
+            for (ResolveInfo app : apps) {
+                String label = app.loadLabel(packageManager).toString().toLowerCase(Locale.ROOT);
+                if (!favorites.contains(app.activityInfo.packageName)
+                        && label.contains(preferredName)) {
+                    return app;
+                }
+            }
+        }
+        for (ResolveInfo app : apps) {
+            if (!favorites.contains(app.activityInfo.packageName)) {
+                return app;
+            }
+        }
         return apps.isEmpty() ? null : apps.get(0);
+    }
+
+    private void showPrimaryAppPicker(List<ResolveInfo> apps) {
+        String selectedPackage = getPreferences().getString(PRIMARY_APP_KEY, null);
+        CharSequence[] choices = new CharSequence[apps.size() + 1];
+        choices[0] = getString(R.string.automatic_primary_app);
+        int selectedChoice = 0;
+        for (int i = 0; i < apps.size(); i++) {
+            ResolveInfo app = apps.get(i);
+            choices[i + 1] = app.loadLabel(getPackageManager());
+            if (app.activityInfo.packageName.equals(selectedPackage)) {
+                selectedChoice = i + 1;
+            }
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.choose_primary_app)
+                .setSingleChoiceItems(choices, selectedChoice, (dialog, which) -> {
+                    SharedPreferences.Editor preferences = getPreferences().edit();
+                    if (which == 0) {
+                        preferences.remove(PRIMARY_APP_KEY);
+                    } else {
+                        preferences.putString(
+                                PRIMARY_APP_KEY,
+                                apps.get(which - 1).activityInfo.packageName);
+                    }
+                    preferences.apply();
+                    dialog.dismiss();
+                    showHome();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     private void addAppsForCategory(
