@@ -1,0 +1,21 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Iniciar emulador Android TV Box",
+			"type": "shell",
+			"command": "C:\\Users\\ianni\\AppData\\Local\\Android\\Sdk\\emulator\\emulator.exe",
+			"args": [
+				"-avd",
+				"TVBoxTest",
+				"-no-snapshot",
+				"-no-boot-anim",
+				"-gpu",
+				"swiftshader_indirect"
+			],
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "test"
+		}
+	]
+}
